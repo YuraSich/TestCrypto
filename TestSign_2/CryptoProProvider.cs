@@ -48,7 +48,7 @@ public class CryptoProProvider
 
         var distinguishedName = builder.Build();
 
-        var certificateRequest = new CpCertificateRequest($"cn={certificateCn}", gost3410);
+        var certificateRequest = new CpCertificateRequest(distinguishedName.Name, gost3410);
 
         certificateRequest.CertificateExtensions.Add(
             new CpX509KeyUsageExtension(
@@ -74,5 +74,5 @@ public class CryptoProProvider
         store.Open(OpenFlags.ReadWrite);
         store.Add(certificate);
         return certificate;
-    } 
+    }
 }
