@@ -4,9 +4,9 @@ class Program
 {
     static void Main()
     {
-        const string certificateCn = "Test Certificate";
+        const string certificateCn = "Test Certificate 2";
 
-        ISignProvider provider = new CryptoProProvider();
+        var provider = new CryptoProProvider();
 
         var inputFilePath = Path.Combine(Environment.CurrentDirectory, "input.txt");
         var signedFilePathAttached = Path.Combine(Environment.CurrentDirectory, "input.sig");
