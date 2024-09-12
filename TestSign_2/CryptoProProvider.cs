@@ -5,9 +5,8 @@ using System.Security.Cryptography.X509Certificates;
 using CryptoPro.Security.Cryptography;
 using CryptoPro.Security.Cryptography.Pkcs;
 using CryptoPro.Security.Cryptography.X509Certificates;
-using CryptoPro.Security.Cryptography.Xml;
 
-namespace TestSign_2;
+namespace SignTestApp;
 
 public class CryptoProProvider
 {

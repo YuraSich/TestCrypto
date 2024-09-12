@@ -1,20 +1,25 @@
-﻿namespace TestSign_2;
+﻿namespace SignTestApp;
 
-class Program
+internal static class Program
 {
-    static void Main()
+    private static void Main()
     {
         const string certificateCn = "Test Certificate 2";
+        const string email = "test@email.ru";
 
         var provider = new CryptoProProvider();
+
+        ICryptoService cryptoService = new CryptoProService();
 
         var inputFilePath = Path.Combine(Environment.CurrentDirectory, "input.txt");
         var signedFilePathAttached = Path.Combine(Environment.CurrentDirectory, "input.sig");
         try
         {
-            CreateFile(inputFilePath);
-            provider.Sign(inputFilePath, signedFilePathAttached, certificateCn, true);
-            Console.WriteLine("Документ успешно подписан");
+            var cert = cryptoService.GetCert(email);
+
+            //CreateFile(inputFilePath);
+            //provider.Sign(inputFilePath, signedFilePathAttached, certificateCn, true);
+            //Console.WriteLine("Документ успешно подписан");
         }
         catch (Exception ex)
         {
