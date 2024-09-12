@@ -28,6 +28,11 @@ internal class CryptoProService : ICryptoService
         return irmCertificates.MaxBy(x => x.NotAfter);
     }
 
+    public CpX509Certificate2? CreateCert(string cn, string? email)
+    {
+        throw new NotImplementedException();
+    }
+
 
     public CpX509Certificate2? GenerateCertificate()
     {
