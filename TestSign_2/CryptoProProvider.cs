@@ -67,7 +67,7 @@ public class CryptoProProvider
 
         var cert = certificateRequest.CreateSelfSigned(DateTimeOffset.Now, DateTimeOffset.Now.AddYears(1));
 
-        byte[] file = cert.Export(X509ContentType.Pfx, new SecureString());
+        var file = cert.Export(X509ContentType.Pfx, new SecureString());
         var certificate = new CpX509Certificate2(file);
         using var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadWrite);
