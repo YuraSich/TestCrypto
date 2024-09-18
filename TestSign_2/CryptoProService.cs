@@ -3,6 +3,7 @@ using CryptoPro.Security.Cryptography.Pkcs;
 using CryptoPro.Security.Cryptography.X509Certificates;
 using CryptoPro.Security.Cryptography.Xml;
 using SignTestApp;
+using System.Net.Security;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
@@ -64,7 +65,7 @@ internal class CryptoProService
     /// </summary>
     public CpX509Certificate2 GenerateCertificate(string cn, string email)
     {
-        var gost3410 = Gost3410_2012_256.Create();
+        using var gost3410 = Gost3410_2012_256.Create();
 
         var builder = new X500DistinguishedNameBuilder();
         builder.AddCommonName(cn + Postfix);
@@ -73,9 +74,9 @@ internal class CryptoProService
 
         var certificateRequest = new CpCertificateRequest(distinguishedName.Name, gost3410);
 
-        var usageFlags = X509KeyUsageFlags.DigitalSignature |
-            X509KeyUsageFlags.DataEncipherment |
-            X509KeyUsageFlags.KeyAgreement;
+        const X509KeyUsageFlags usageFlags = X509KeyUsageFlags.DigitalSignature |
+                                             X509KeyUsageFlags.DataEncipherment |
+                                             X509KeyUsageFlags.KeyAgreement;
 
         certificateRequest.CertificateExtensions.Add(new CpX509KeyUsageExtension(usageFlags, false));
 
@@ -88,14 +89,6 @@ internal class CryptoProService
         certificateRequest.CertificateExtensions.Add(new CpX509EnhancedKeyUsageExtension(oidCollection, true));
 
         var cert = certificateRequest.CreateSelfSigned(DateTimeOffset.Now, DateTimeOffset.Now.AddYears(1));
-        //using var readStore = new CpX509Store(StoreLocation.CurrentUser);
-        //readStore.Open(OpenFlags.ReadOnly);
-        //var certCollection = readStore.Certificates;
-        //var issuer = certCollection.Find(X509FindType.FindByThumbprint, "39b2693bedf613f0bbcd5cf8054074791eaf78e3", false)[0];
-
-        //var cert2 = certificateRequest.Create(issuer,DateTimeOffset.Now, DateTimeOffset.Now.AddYears(1), );
-
-        cert = new CpX509Certificate2(cert.Export(X509ContentType.Pfx), "", X509KeyStorageFlags.Exportable);
 
         using (var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser))
         {
@@ -234,6 +227,39 @@ internal class CryptoProService
             }
             Console.WriteLine();
         }
+    }
+
+    public byte[] Sign(byte[] bytesToHash, CpX509Certificate2 cert)
+    {
+        var contentInfo = new ContentInfo(bytesToHash);
+        var signedCms = new CpSignedCms(contentInfo, true);
+        var cmsSigner = new CpCmsSigner(cert);
+
+        signedCms.ComputeSignature(cmsSigner);
+        return signedCms.Encode();
+    }
+
+
+    public byte[] Encrypt(byte[] msgBytes, CpX509Certificate2 cert)
+    {
+        var contentInfo = new ContentInfo(new Oid("1.2.840.113549.1.7.1"), msgBytes);
+
+        // https://tc26.ru/about/protsedury-i-reglamenty/identifikatory-obektov-oid-tekhnicheskogo-komiteta-po-standartizatsii-kriptograficheskaya-zashchita-1.html
+        // OID - 1.2.643.7.1.1.5.2 - алгоритм шифрования «Кузнечик»
+        var envelopedCms = new CpEnvelopedCms(contentInfo);
+        var recipient = new CpCmsRecipient(SubjectIdentifierType.IssuerAndSerialNumber, cert);
+        envelopedCms.Encrypt(recipient);
+        return envelopedCms.Encode();
+    }
+
+    public byte[] Decrypt(byte[] msgBytes, CpX509Certificate2 cert)
+    {
+        var envelopedCms = new CpEnvelopedCms();
+        
+        envelopedCms.Decode(msgBytes);
+        
+        envelopedCms.Decrypt(new CpX509Certificate2Collection(cert));
+        return envelopedCms.ContentInfo.Content;
     }
 
     #region private methods
