@@ -1,19 +1,17 @@
-﻿using CryptoPro.Security.Cryptography;
-using CryptoPro.Security.Cryptography.Pkcs;
-using CryptoPro.Security.Cryptography.X509Certificates;
-using CryptoPro.Security.Cryptography.Xml;
-using SignTestApp;
-using System.Net.Security;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml;
+using CryptoPro.Security.Cryptography;
+using CryptoPro.Security.Cryptography.Pkcs;
+using CryptoPro.Security.Cryptography.X509Certificates;
+using CryptoPro.Security.Cryptography.Xml;
 
-namespace CryptoModuleTest;
+namespace SignTestApp;
 
-internal class CryptoProService
+internal class CryptoProService : ICryptoProService
 {
     private const int CRYPT_VERIFYCONTEXT = -268435456; //No private key access required
 
@@ -46,6 +44,13 @@ internal class CryptoProService
         var currentCerts = certCollection.Find(X509FindType.FindByTimeValid, DateTime.Now, false);
         var irmCertificates = currentCerts.Where(x => CheckEmail(x, email) && CheckCn(x)).ToArray();
         return irmCertificates.MaxBy(x => x.NotAfter);
+    }
+
+    public CpX509Certificate2? GetDefaultCert(string thumbprint)
+    {
+        using var store = new CpX509Store(StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadOnly);
+        return store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, false).FirstOrDefault();
     }
 
     /// <summary>
@@ -99,6 +104,7 @@ internal class CryptoProService
         return cert;
     }
 
+    // Тестовый пример из официальной документации
     public void EnvelopedCmsGost2012_256(CpX509Certificate2 cert)
     {
         // Исходное сообщение.
@@ -239,8 +245,13 @@ internal class CryptoProService
         return signedCms.Encode();
     }
 
-
-    public byte[] Encrypt(byte[] msgBytes, CpX509Certificate2 cert)
+    /// <summary>
+    /// Зашифровываем сообщение, используя открытый ключ получателя, при помощи класса EnvelopedCms.
+    /// </summary>
+    /// <param name="msgBytes">Сообщение</param>
+    /// <param name="cert">Сертификат получателя</param>
+    /// <returns>Зашифрованное сообщение</returns>
+    public ReadOnlySpan<byte> Encrypt(byte[] msgBytes, CpX509Certificate2 cert)
     {
         var contentInfo = new ContentInfo(new Oid("1.2.840.113549.1.7.1"), msgBytes);
 
@@ -252,25 +263,29 @@ internal class CryptoProService
         return envelopedCms.Encode();
     }
 
-    public byte[] Decrypt(byte[] msgBytes, CpX509Certificate2 cert)
+    /// <summary>
+    /// Расшифрование закодированного EnvelopedCms сообщения.
+    /// </summary>
+    /// <param name="msgBytes">Закодированное сообщение.</param>
+    /// <param name="cert">Сертификат</param>
+    /// <returns>Раскодированное сообщение</returns>
+    public ReadOnlySpan<byte> Decrypt(ReadOnlySpan<byte> msgBytes, CpX509Certificate2 cert)
     {
         var envelopedCms = new CpEnvelopedCms();
-        
         envelopedCms.Decode(msgBytes);
-        
         envelopedCms.Decrypt(new CpX509Certificate2Collection(cert));
         return envelopedCms.ContentInfo.Content;
     }
 
     #region private methods
 
-    private bool IsCryptoProLicenseValid()
+    public bool IsCryptoProLicenseValid()
     {
         // TODO
         return true;
     }
 
-    private CryptoProVersion? GetCryptoProInstalledVersion()
+    public CryptoProVersion? GetCryptoProInstalledVersion()
     {
         var dProvider = new nint();
         var version = new byte[4];
