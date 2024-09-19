@@ -1,13 +1,13 @@
-﻿using System.Runtime.InteropServices;
+﻿using CryptoPro.Security.Cryptography;
+using CryptoPro.Security.Cryptography.Pkcs;
+using CryptoPro.Security.Cryptography.X509Certificates;
+using CryptoPro.Security.Cryptography.Xml;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml;
-using CryptoPro.Security.Cryptography;
-using CryptoPro.Security.Cryptography.Pkcs;
-using CryptoPro.Security.Cryptography.X509Certificates;
-using CryptoPro.Security.Cryptography.Xml;
 
 namespace SignTestApp;
 
@@ -37,7 +37,7 @@ internal class CryptoProService : ICryptoProService
             throw new CryptoProLicenseMissingException();
         }
 
-        using var store = new CpX509Store(StoreLocation.CurrentUser);
+        using var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadOnly);
 
         var certCollection = store.Certificates;
@@ -55,52 +55,29 @@ internal class CryptoProService : ICryptoProService
 
     /// <summary>
     /// Формирование ключа шифрования и подписи.
-    /// ??? Функция CryptGenKey генерирует случайные криптографические ключи или ключевую пару(закрытый/открытый ключи). 
-    /// Полученный дескриптор ключа должен в обязательном порядке быть удалён
-    /// с помощью вызова функции CryptDestroyKey до вызова функции CryptReleaseContext для рабочего дескриптора криптопровайдера.
-    /// 
-    /// + Криптопровайдер - Crypto-Pro GOST R 34.10-2012 Cryptographic Service Provider;
-    /// + Алгоритм генерации ключа - ГОСТ 34.10-2012 256 бит;
-    /// Назначение ключа - Подпись и шифрование;
-    /// Параметры экспорта - Не экспортируемые;
-    /// + Способы использования ключа - Подпись(digitalSignature) Шифрование(dataEncryption), Согласование(keyAgreement);
-    /// + Назначение сертификата - Проверка подлинности клиента.
-    /// ? Срок действия открытого ключа - 1 год.
-    /// ? Срок действия закрытого ключа - 4 года.
     /// </summary>
     public CpX509Certificate2 GenerateCertificate(string cn, string email)
     {
-        using var gost3410 = Gost3410_2012_256.Create();
-
+        using var cryptoServiceProvider = new Gost3410_2012_256CryptoServiceProvider();
         var builder = new X500DistinguishedNameBuilder();
         builder.AddCommonName(cn + Postfix);
         builder.AddEmailAddress(email);
         var distinguishedName = builder.Build();
 
-        var certificateRequest = new CpCertificateRequest(distinguishedName.Name, gost3410);
+        var request = new CpCertificateRequest(distinguishedName.Name, cryptoServiceProvider);
 
-        const X509KeyUsageFlags usageFlags = X509KeyUsageFlags.DigitalSignature |
-                                             X509KeyUsageFlags.DataEncipherment |
-                                             X509KeyUsageFlags.KeyAgreement;
+        request.CertificateExtensions.Add(new CpX509BasicConstraintsExtension(true, false, 0, true));
 
-        certificateRequest.CertificateExtensions.Add(new CpX509KeyUsageExtension(usageFlags, false));
+        request.CertificateExtensions.Add(new CpX509SubjectKeyIdentifierExtension(request.PublicKey, false));
 
-        certificateRequest.CertificateExtensions.Add(new CpX509BasicConstraintsExtension());
-
-        var oidCollection = new OidCollection {
-            new("1.3.6.1.5.5.7.3.2") //Проверка подлинности клиента (1.3.6.1.5.5.7.3.2)
-        };
-
-        certificateRequest.CertificateExtensions.Add(new CpX509EnhancedKeyUsageExtension(oidCollection, true));
-
-        var cert = certificateRequest.CreateSelfSigned(DateTimeOffset.Now, DateTimeOffset.Now.AddYears(1));
-
+        using var parentCert = request.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
+        var certData = parentCert.Export(X509ContentType.Pfx, string.Empty);
+        var cert = new CpX509Certificate2(certData);
         using (var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser))
         {
             store.Open(OpenFlags.ReadWrite);
             store.Add(cert);
         }
-
         return cert;
     }
 
@@ -251,13 +228,13 @@ internal class CryptoProService : ICryptoProService
     /// <param name="msgBytes">Сообщение</param>
     /// <param name="cert">Сертификат получателя</param>
     /// <returns>Зашифрованное сообщение</returns>
-    public ReadOnlySpan<byte> Encrypt(byte[] msgBytes, CpX509Certificate2 cert)
+    public byte[] Encrypt(byte[] msgBytes, CpX509Certificate2 cert)
     {
         var contentInfo = new ContentInfo(new Oid("1.2.840.113549.1.7.1"), msgBytes);
 
         // https://tc26.ru/about/protsedury-i-reglamenty/identifikatory-obektov-oid-tekhnicheskogo-komiteta-po-standartizatsii-kriptograficheskaya-zashchita-1.html
         // OID - 1.2.643.7.1.1.5.2 - алгоритм шифрования «Кузнечик»
-        var envelopedCms = new CpEnvelopedCms(contentInfo);
+        var envelopedCms = new CpEnvelopedCms(contentInfo, new AlgorithmIdentifier(new Oid("1.2.643.7.1.1.5.2")));
         var recipient = new CpCmsRecipient(SubjectIdentifierType.IssuerAndSerialNumber, cert);
         envelopedCms.Encrypt(recipient);
         return envelopedCms.Encode();
@@ -269,7 +246,7 @@ internal class CryptoProService : ICryptoProService
     /// <param name="msgBytes">Закодированное сообщение.</param>
     /// <param name="cert">Сертификат</param>
     /// <returns>Раскодированное сообщение</returns>
-    public ReadOnlySpan<byte> Decrypt(ReadOnlySpan<byte> msgBytes, CpX509Certificate2 cert)
+    public byte[] Decrypt(ReadOnlySpan<byte> msgBytes, CpX509Certificate2 cert)
     {
         var envelopedCms = new CpEnvelopedCms();
         envelopedCms.Decode(msgBytes);
