@@ -5,7 +5,7 @@ namespace SignTestApp;
 internal static class Program
 {
     private const string CertificateCn = "Test Certificate";
-    private const string Email = "test@email.ru";
+    private const string Email = "test2@email.ru";
     private const string SampleData = "Sample data to sign";
     private static void Main()
     {
@@ -16,6 +16,7 @@ internal static class Program
 
         try
         {
+            Console.WriteLine(Environment.CurrentDirectory);
             File.WriteAllBytes("source.txt", msgBytes);
             var cert = provider.GetCert(Email) ?? provider.GenerateCertificate(CertificateCn, Email);
 

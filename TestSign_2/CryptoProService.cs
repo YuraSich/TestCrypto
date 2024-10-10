@@ -18,21 +18,21 @@ internal class CryptoProService : ICryptoProService
 
     public CpX509Certificate2? GetCert(string email)
     {
-        var cryptoProVersion = GetCryptoProInstalledVersion();
-        if (cryptoProVersion == null)
-        {
-            throw new CryptoProNotFoundException();
-        }
+        //var cryptoProVersion = GetCryptoProInstalledVersion();
+        //if (cryptoProVersion == null)
+        //{
+        //    throw new CryptoProNotFoundException();
+        //}
 
-        if (cryptoProVersion < MinimalSupportedVersion)
-        {
-            throw new CryptoProObsoleteException(MinimalSupportedVersion, cryptoProVersion);
-        }
+        //if (cryptoProVersion < MinimalSupportedVersion)
+        //{
+        //    throw new CryptoProObsoleteException(MinimalSupportedVersion, cryptoProVersion);
+        //}
 
-        if (!IsCryptoProLicenseValid())
-        {
-            throw new CryptoProLicenseMissingException();
-        }
+        //if (!IsCryptoProLicenseValid())
+        //{
+        //    throw new CryptoProLicenseMissingException();
+        //}
 
         using var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadOnly);
@@ -58,18 +58,66 @@ internal class CryptoProService : ICryptoProService
 
         request.CertificateExtensions.Add(new CpX509BasicConstraintsExtension(true, false, 0, true));
 
-        request.CertificateExtensions.Add(new CpX509SubjectKeyIdentifierExtension(request.PublicKey, false));
+        request.CertificateExtensions.Add(new CpX509SubjectKeyIdentifierExtension(request.PublicKey, true));
 
         using var parentCert = request.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
         var certData = parentCert.Export(X509ContentType.Pfx, string.Empty);
         var cert = new CpX509Certificate2(certData);
-        using (var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser))
-        {
-            store.Open(OpenFlags.ReadWrite);
-            store.Add(cert);
-        }
+        using var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+        store.Add(cert);
         return cert;
     }
+
+    public CpX509Certificate2 GenerateRootCertificate(string cn)
+    {
+        using var cryptoServiceProvider = new Gost3410_2012_256CryptoServiceProvider();
+        var builder = new X500DistinguishedNameBuilder();
+        builder.AddCommonName(cn);
+        var distinguishedName = builder.Build();
+
+        var request = new CpCertificateRequest(distinguishedName.Name, cryptoServiceProvider);
+        request.CertificateExtensions.Add(new CpX509BasicConstraintsExtension(true, false, 0, true)); // Указываем, что это сертификат ЦС
+        request.CertificateExtensions.Add(new CpX509SubjectKeyIdentifierExtension(request.PublicKey, true));
+
+        // Создание самоподписанного сертификата для УЦ
+        using var rootCert = request.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(5)); // Срок действия можно задать больше
+        var certData = rootCert.Export(X509ContentType.Pfx, "your-secure-password");
+        var cert = new CpX509Certificate2(certData);
+
+        // Добавляем корневой сертификат в хранилище
+        using var store = new CpX509Store(StoreName.Root, StoreLocation.CurrentUser); // Корневые сертификаты хранятся в хранилище "Root"
+        store.Open(OpenFlags.ReadWrite);
+        store.Add(cert);
+
+        return cert;
+    }
+
+    public CpX509Certificate2 GenerateSignedCertificate(CpX509Certificate2 caCert, string cn, string email)
+    {
+        using var cryptoServiceProvider = new Gost3410_2012_256CryptoServiceProvider();
+        var builder = new X500DistinguishedNameBuilder();
+        builder.AddCommonName(cn);
+        builder.AddEmailAddress(email);
+        var distinguishedName = builder.Build();
+
+        var request = new CpCertificateRequest(distinguishedName.Name, cryptoServiceProvider);
+        request.CertificateExtensions.Add(new CpX509BasicConstraintsExtension(false, false, 0, true)); // Обычный сертификат, не ЦС
+        request.CertificateExtensions.Add(new CpX509SubjectKeyIdentifierExtension(request.PublicKey, true));
+
+        // Подписываем сертификат с помощью УЦ
+        using var signedCert = request.Create(caCert, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1), Guid.NewGuid().ToByteArray());
+        var certData = signedCert.Export(X509ContentType.Pfx, "your-secure-password");
+        var cert = new CpX509Certificate2(certData);
+
+        // Добавляем сертификат в хранилище
+        using var store = new CpX509Store(StoreName.My, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+        store.Add(cert);
+
+        return cert;
+    }
+
 
     public byte[] Sign(byte[] bytesToHash, CpX509Certificate2 cert)
     {
